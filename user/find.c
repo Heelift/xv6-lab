@@ -52,7 +52,7 @@ void find(char *dir_name, char *file_name)
             break;
         }
         strcpy(buf, dir_name);
-        p = buf + strlen(buf); //p鎸囧悜path鐨勬湯灏?
+        p = buf + strlen(buf); //p指向path的末尾
         *p++ = '/';
         while (read(fd, &de, sizeof(de)) == sizeof(de))
         {

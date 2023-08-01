@@ -10,23 +10,23 @@ int main(int argc, char* argv[])
         fprintf(2, "pipe error\n");
     }
 
-    // child
+    //子进程
     if (fork() == 0){
         char buffer[1];
         read(fd[0], buffer, 1);
-        close(fd[0]);
+        close(fd[0]); //关闭读端
         fprintf(0, "%d: received ping\n", getpid());
         write(fd[1], buffer, 1);
-        close(fd[1]);
+        close(fd[1]); //关闭写端
     }
-    // parent
+    //父进程
     else {
         char buffer[1];
         buffer[0] = 'a';
         write(fd[1], buffer, 1);
-        close(fd[1]);
+        close(fd[1]); //关闭写端
         read(fd[0], buffer, 1);
-        close(fd[0]);
+        close(fd[0]); //关闭读端
         fprintf(0, "%d: received pong\n", getpid());
     }
 
