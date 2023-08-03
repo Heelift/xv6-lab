@@ -2,6 +2,7 @@ struct stat;
 struct rtcdate;
 
 // system calls
+int trace(int);
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
@@ -23,6 +24,8 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+struct sysinfo;
+int sysinfo(struct sysinfo *);
 
 // ulib.c
 int stat(const char*, struct stat*);
