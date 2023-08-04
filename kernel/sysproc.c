@@ -81,6 +81,28 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 vaddr;
+  int num;
+  uint64 res_addr;
+  argaddr(0, &vaddr);
+  argint(1, &num);
+  argaddr(2, &res_addr);
+
+  struct proc *p = myproc();
+  pagetable_t pagetable = p->pagetable;
+  uint64 res = 0;
+
+  for(int i = 0; i < num; i++){
+    pte_t* pte = walk(pagetable, vaddr + PGSIZE * i, 1);
+    if(*pte & PTE_A){
+      *pte &= (~PTE_A);
+      res |= (1L << i);
+    }
+  }
+  if(copyout(pagetable, res_addr, (char*)&res, sizeof(uint64)) < 0){
+    return -1;
+  }
+
   return 0;
 }
 #endif
@@ -107,3 +129,5 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
