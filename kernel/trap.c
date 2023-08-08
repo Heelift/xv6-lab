@@ -16,6 +16,8 @@ void kernelvec();
 
 extern int devintr();
 
+extern int refNum[];
+
 void
 trapinit(void)
 {
@@ -29,6 +31,22 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+int cowcheck(pagetable_t pagetable,uint64 va)
+{
+  if(va >= MAXVA)
+    return 0;
+  pte_t *pte;
+  if((pte = walk(pagetable, va, 0)) == 0)
+    return 0;
+  if((*pte & PTE_V) == 0)
+    return 0;
+  if((*pte & PTE_RSW))
+  {
+    return 1;
+  }
+  return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -37,49 +55,85 @@ void
 usertrap(void)
 {
   int which_dev = 0;
-
+ 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
-
+ 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
-
+ 
   struct proc *p = myproc();
-  
+ 
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
+ 
   if(r_scause() == 8){
     // system call
-
+ 
     if(p->killed)
       exit(-1);
-
+ 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
     p->trapframe->epc += 4;
-
+ 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();
-
+ 
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+  } 
+  else if(r_scause() == 13 || r_scause() == 15)
+  {
+    uint64 va = r_stval();    
+    if(cowcheck(p->pagetable,va)==0) {
+      p->killed = 1;
+    }   
+    else {     
+      va=PGROUNDDOWN(va);
+      pte_t *pte = walk(p->pagetable, va, 0);
+      uint64 old_pa=PTE2PA(*pte);
+      if(get_page_ref((void*)old_pa)==1)
+      {
+        *pte |= PTE_W;
+        *pte &= (~PTE_RSW);
+      }
+      else
+      {
+        void* new_pa=kalloc();
+        if(new_pa==0)
+        {
+          p->killed = 1;
+        }
+        else
+        {
+          memmove(new_pa,(void*)old_pa,PGSIZE);
+          uint flags = PTE_FLAGS(*pte);
+          uint64 new_pte=PA2PTE(new_pa);
+          *pte = new_pte | flags;
+          *pte |= PTE_W;
+          *pte &= (~PTE_RSW);
+          kfree((void*)old_pa);          
+        }
+      }
+    }
   }
-
+  else{
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+  }
+ 
   if(p->killed)
     exit(-1);
-
+ 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
-
+ 
   usertrapret();
 }
 
