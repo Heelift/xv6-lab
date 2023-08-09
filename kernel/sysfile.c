@@ -291,6 +291,8 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
+  char sym_path[MAXPATH]; 
+  struct inode* sym_ip=0;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
@@ -313,6 +315,35 @@ sys_open(void)
       iunlockput(ip);
       end_op();
       return -1;
+    }
+  }
+
+  if(!(omode & O_NOFOLLOW) && ip->type == T_SYMLINK)
+  {
+    int i=0;
+    //循环向下搜索，最大搜索深度为10
+    while(ip->type==T_SYMLINK)
+    {
+      if(readi(ip,0,(uint64)&sym_path,0,MAXPATH)==-1)   
+      {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlockput(ip);  
+      if((sym_ip = namei(sym_path)) == 0) 
+      {
+        end_op();
+        return -1;
+      }
+      i++;
+      if(i==10)
+      {
+        end_op();
+        return -1;
+      }
+      ip=sym_ip; 
+      ilock(ip);       
     }
   }
 
@@ -482,5 +513,31 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64 
+sys_symlink(void) {
+  int n;
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+
+  if ((n = argstr(0, target, MAXPATH)) < 0
+    || argstr(1, path, MAXPATH) < 0) {
+    return -1;
+  }
+  begin_op();
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+  if(writei(ip, 0, (uint64)target, 0, n) != n) {
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  iunlockput(ip);
+  end_op();
+
   return 0;
 }
