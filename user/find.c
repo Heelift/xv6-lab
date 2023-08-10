@@ -29,13 +29,12 @@ void find(char *dir_name, char *file_name)
 
     if ((fd = open(dir_name, 0)) < 0)
     {
-        fprintf(2, "ls: cannot open %s\n", dir_name);
+        fprintf(2, "find: cannot open %s\n", dir_name);
         return;
     }
-
     if (fstat(fd, &st) < 0)
     {
-        fprintf(2, "ls: cannot stat %s\n", dir_name);
+        fprintf(2, "find: cannot stat %s\n", dir_name);
         close(fd);
         return;
     }
