@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h" 
+#include "sleeplock.h"  
+#include "fs.h"   
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -281,11 +285,28 @@ fork(void)
     return -1;
   }
 
-  // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  int length = 0;
+  for(int i = 0; i < 16; i++){
+     if(p->vmas[i].length){
+      length += p->vmas[i].length;
+    }
+  }
+  if(uvmcopy(p->pagetable, np->pagetable, p->sz-length) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
+  }    
+  for(int i = 0; i < 16; i++){
+    if(p->vmas[i].addr){
+      np->vmas[i].f = p->vmas[i].f;
+      np->vmas[i].length = p->vmas[i].length;
+      np->vmas[i].prot = p->vmas[i].prot;
+      np->vmas[i].flags = p->vmas[i].flags;
+      np->vmas[i].offset = 0; 
+      np->vmas[i].addr = p->vmas[i].addr;
+      np->vmas[i].oldsz = p->vmas[i].oldsz;
+      filedup(p->vmas[i].f);
+    }
   }
   np->sz = p->sz;
 
@@ -350,6 +371,29 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  for(int i = 0; i < 16; i++){
+    if(p->vmas[i].addr){
+      int offset = p->vmas[i].f->off;
+      if(p->vmas[i].oldsz != p->vmas[i].addr) 
+        offset = p->vmas[i].offset;  
+      
+      if(p->vmas[i].flags & MAP_SHARED){
+          begin_op();
+          ilock(p->vmas[i].f->ip);
+          writei(p->vmas[i].f->ip, 1, p->vmas[i].addr, offset, p->vmas[i].length);
+          iunlock(p->vmas[i].f->ip);
+          end_op();
+      }
+      p->sz -= p->vmas[i].length;  
+      p->vmas[i].f->ref--;
+      pte_t *pte = walk(p->pagetable, p->vmas[i].addr, 0);
+      if((*pte & PTE_V) == 0) 
+        continue;        
+
+      uvmunmap(p->pagetable, p->vmas[i].addr, p->vmas[i].length/PGSIZE, 1);
     }
   }
 

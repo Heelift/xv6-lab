@@ -18,6 +18,16 @@ struct context {
   uint64 s11;
 };
 
+struct vma {
+  struct file *f;
+  int length;
+  int prot;
+  int flags;
+  int offset;
+  int oldsz;
+  uint64 addr;
+};
+
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
@@ -104,5 +114,6 @@ struct proc {
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
+  char name[16];               // Process name (debugging)    
+  struct vma vmas[16];
 };

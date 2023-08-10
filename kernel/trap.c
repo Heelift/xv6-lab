@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h" 
+#include "fs.h"   
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -27,6 +31,60 @@ void
 trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+}
+
+int
+lazyalloc(pagetable_t pagetable, uint64 va)
+{ 
+  struct proc *p = myproc();
+  struct file *f;
+  int prot;
+  int has_a_vam = 0;
+  int perm = 0;
+  char *mem;
+  int i;
+
+  for(i = 0; i < 16; i++){
+    if(p->vmas[i].addr <= va && va < (p->vmas[i].addr + p->vmas[i].length)){
+      has_a_vam = 1;
+      f = p->vmas[i].f;
+      prot = p->vmas[i].prot;
+      break;
+    }
+  }
+  if(has_a_vam == 0){
+    return -1;
+  }
+    
+  perm |= PTE_U;
+  if(prot & PROT_READ){
+    perm |= PTE_R;
+  }
+  if(prot & PROT_WRITE){
+    perm |= PTE_W;
+  }  
+  if(prot & PROT_EXEC){
+    perm |= PTE_X;
+  }
+  if((mem = kalloc()) == 0){
+    return -1;
+  }
+  
+  memset(mem, 0, PGSIZE);
+  if(mappages(pagetable, va, PGSIZE, (uint64)mem, perm) == -1){
+    kfree(mem);
+    return -1;
+  }
+
+  ilock(f->ip);
+  if(readi(f->ip, 1, va, va - p->vmas[i].addr, PGSIZE) < 0){ 
+    iunlock(f->ip);
+    return -1;
+  }
+  iunlock(f->ip);
+  p->vmas[i].offset += PGSIZE;
+
+  return 0;
 }
 
 //
@@ -67,7 +125,15 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } 
+  else if(r_scause() == 13){
+    uint64 fault_va = r_stval();
+    int is_alloc = lazyalloc(p->pagetable, fault_va);
+    if(fault_va > p->sz || is_alloc == -1){
+      p->killed = 1;
+    }
+  } 
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
